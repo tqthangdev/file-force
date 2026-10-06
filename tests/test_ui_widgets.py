@@ -4,7 +4,7 @@ from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QStyle, QStyleOptionSpinBox
 
-from app.ui.assets import ICONS_DIR, icon_path
+from app.ui.assets import ICONS_DIR, app_icon, icon_path
 from app.ui.theme import apply_theme
 from app.ui.widgets import DoubleSpinBox, SpinBox
 
@@ -122,3 +122,11 @@ def test_bundled_icons_resolve_and_load(qapp):
     assert not icon.isNull()
     assert not icon.pixmap(16, 16).isNull()
     assert not QIcon(str(icon_path("add-file.png"))).isNull()
+
+
+def test_app_icon_loads_and_is_cached(qapp):
+    icon = app_icon()
+    assert not icon.isNull()
+    for size in (16, 32, 48):
+        assert not icon.pixmap(size, size).isNull()
+    assert app_icon() is icon  # loaded once

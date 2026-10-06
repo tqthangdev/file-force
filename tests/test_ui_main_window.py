@@ -79,6 +79,13 @@ def test_shortcuts_are_ctrl_based(qtbot, tmp_path):
             )
 
 
+def test_window_uses_the_app_icon(qtbot, tmp_path):
+    window, _ = _window(qtbot, tmp_path)
+    icon = window.windowIcon()
+    assert not icon.isNull()
+    assert not icon.pixmap(32, 32).isNull()
+
+
 def test_add_files_button_is_icon_only(qtbot, tmp_path):
     window, _ = _window(qtbot, tmp_path)
     button = window.drop_area.add_button

@@ -31,6 +31,7 @@ from app.core.preflight import ConflictDecision
 from app.models.conversion_job import ConversionJob, JobStatus
 from app.services.external_tools import ExternalTools
 from app.services.settings import OutputMode, Settings
+from app.ui.assets import app_icon
 from app.ui.dialogs.about_dialog import AboutDialog
 from app.ui.dialogs.convert_dialog import ConvertOptionsDialog
 from app.ui.drop_area import DropArea, FolderScanWorker
@@ -61,6 +62,7 @@ class MainWindow(QMainWindow):
         self._ask_all_decision: ConflictDecision | None = None
 
         self.setWindowTitle("FileForge")
+        self.setWindowIcon(app_icon())
         self.resize(880, 620)
 
         self._build_menu()
@@ -83,7 +85,7 @@ class MainWindow(QMainWindow):
         self.clear_action.setShortcut(QKeySequence("Ctrl+L"))
         self.clear_action.triggered.connect(self.manager.clear)
 
-        settings_action = QAction("Settings…", self)
+        settings_action = QAction("Settings", self)
         settings_action.setShortcut(QKeySequence("Ctrl+,"))
         settings_action.triggered.connect(self._open_settings)
 
@@ -141,7 +143,7 @@ class MainWindow(QMainWindow):
         output_row = QHBoxLayout()
         self.output_label = QLabel()
         self.output_label.setObjectName("mutedText")
-        change_button = QPushButton("Change…")
+        change_button = QPushButton("Change")
         change_button.clicked.connect(self._change_output)
         output_row.addWidget(self.output_label)
         output_row.addStretch(1)
@@ -390,7 +392,7 @@ class MainWindow(QMainWindow):
 
     def _on_batch_started(self) -> None:
         self._update_buttons()
-        self.statusBar().showMessage("Converting…")
+        self.statusBar().showMessage("Converting")
 
     def _on_batch_finished(self) -> None:
         self._update_buttons()

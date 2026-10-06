@@ -24,6 +24,7 @@ from app.services.external_tools import FFMPEG, LIBREOFFICE, ExternalTools  # no
 from app.services.logging_setup import setup_logging  # noqa: E402
 from app.services.settings import Settings  # noqa: E402
 from app.ui.main_window import MainWindow  # noqa: E402
+from app.ui.assets import app_icon  # noqa: E402
 from app.ui.cursors import install_pointer_cursors  # noqa: E402
 from app.ui.theme import apply_theme, install_dialog_button_icon_filter  # noqa: E402
 
@@ -49,6 +50,8 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("FileForge")
     app.setOrganizationName("FileForge")
+    # Window/taskbar icon for every top-level window (dialogs included).
+    app.setWindowIcon(app_icon())
     apply_theme(app, settings.theme)
     install_pointer_cursors(app)
     install_dialog_button_icon_filter(app)

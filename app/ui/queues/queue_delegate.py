@@ -16,7 +16,7 @@ ROW_HEIGHT = 64
 
 _STATUS_TEXT = {
     JobStatus.WAITING: "Waiting",
-    JobStatus.CONVERTING: "Converting…",
+    JobStatus.CONVERTING: "Converting",
     JobStatus.COMPLETED: "Done",
     JobStatus.FAILED: "Failed",
     JobStatus.CANCELLED: "Cancelled",

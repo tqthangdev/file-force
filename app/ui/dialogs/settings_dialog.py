@@ -67,7 +67,7 @@ def _path_row(line_edit: QLineEdit, on_browse) -> QWidget:
     layout = QHBoxLayout(widget)
     layout.setContentsMargins(0, 0, 0, 0)
     layout.addWidget(line_edit)
-    button = QPushButton("Browse…")
+    button = QPushButton("Browse")
     button.clicked.connect(on_browse)
     layout.addWidget(button)
     return widget
