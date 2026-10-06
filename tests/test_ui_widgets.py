@@ -103,7 +103,7 @@ def test_bundled_icons_resolve_and_load(qapp):
     # parents[N] made the icon path point at app/ui/assets and QIcon came back empty.
     from PyQt6.QtGui import QIcon
 
-    from app.ui.dialogs.settings_dialog import _question_icon
+    from app.ui.assets import question_icon
 
     for name in (
         "question.svg",
@@ -118,7 +118,7 @@ def test_bundled_icons_resolve_and_load(qapp):
         assert path.exists(), f"missing asset: {path}"
         assert str(path).startswith(str(ICONS_DIR))
 
-    icon = _question_icon()
+    icon = question_icon()
     assert not icon.isNull()
     assert not icon.pixmap(16, 16).isNull()
     assert not QIcon(str(icon_path("add-file.png"))).isNull()

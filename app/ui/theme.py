@@ -216,10 +216,11 @@ def stylesheet(theme: str, app: QApplication | None = None) -> str:
             background: {tokens['drop_background']};
         }}
         QLabel#mutedText {{ color: {tokens['muted']}; }}
-        QToolButton#helpButton, QPushButton#iconButton {{
+        QToolButton#helpButton, QToolButton#flatButton, QPushButton#iconButton {{
             border: none; background: transparent; padding: 0;
         }}
         QToolButton#helpButton:hover, QToolButton#helpButton:pressed,
+        QToolButton#flatButton:hover, QToolButton#flatButton:pressed,
         QPushButton#iconButton:hover, QPushButton#iconButton:pressed {{
             border: none; background: transparent;
         }}

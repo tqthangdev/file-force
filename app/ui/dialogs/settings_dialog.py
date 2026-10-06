@@ -4,7 +4,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from PyQt6.QtCore import QSize, Qt
-from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -31,21 +30,10 @@ from app.services.settings import (
     Settings,
     max_supported_workers,
 )
-from app.ui.assets import icon_path
+from app.ui.assets import question_icon
 from app.ui.theme import apply_theme, set_tool_status
 from app.ui.widgets import SpinBox
 
-
-def _question_icon() -> QIcon:
-    """Question-mark icon, using the -hover variant for the active state."""
-    icon = QIcon()
-    normal = icon_path("question.svg")
-    hover = icon_path("question-hover.svg")
-    if normal.exists():
-        icon.addFile(str(normal), QSize(), QIcon.Mode.Normal, QIcon.State.Off)
-    if hover.exists():
-        icon.addFile(str(hover), QSize(), QIcon.Mode.Active, QIcon.State.Off)
-    return icon
 
 
 _OUTPUT_MODES = [
@@ -284,7 +272,7 @@ class SettingsDialog(QDialog):
 
         button = QToolButton(container)
         button.setObjectName("helpButton")
-        button.setIcon(_question_icon())
+        button.setIcon(question_icon())
         button.setIconSize(QSize(16, 16))
         button.setAutoRaise(True)
         button.setCursor(Qt.CursorShape.PointingHandCursor)

@@ -117,6 +117,12 @@ def build(name: str, onefile: bool, console: bool) -> int:
     if assets.is_dir() and any(assets.iterdir()):
         command += ["--add-data", f"{assets}{os.pathsep}app/assets"]
 
+    # version.json is read at runtime (app/core/updater/paths.py). Bundled data lands
+    # in the onedir `_internal` folder, which is where it is looked up.
+    version_file = ROOT / "version.json"
+    if version_file.is_file():
+        command += ["--add-data", f"{version_file}{os.pathsep}."]
+
     command.append(str(ROOT / "run.py"))
 
     print("Running:", " ".join(command))

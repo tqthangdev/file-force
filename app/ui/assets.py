@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from PyQt6.QtCore import QSize
 from PyQt6.QtGui import QIcon
 
 APP_DIR = Path(__file__).resolve().parents[1]  # the `app` package
@@ -29,3 +30,15 @@ def app_icon() -> QIcon:
         path = icon_path(APP_ICON)
         _app_icon = QIcon(str(path)) if path.exists() else QIcon()
     return _app_icon
+
+
+def question_icon() -> QIcon:
+    """Question-mark icon, using the -hover variant for the active state."""
+    icon = QIcon()
+    normal = icon_path("question.svg")
+    hover = icon_path("question-hover.svg")
+    if normal.exists():
+        icon.addFile(str(normal), QSize(), QIcon.Mode.Normal, QIcon.State.Off)
+    if hover.exists():
+        icon.addFile(str(hover), QSize(), QIcon.Mode.Active, QIcon.State.Off)
+    return icon

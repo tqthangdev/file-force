@@ -113,12 +113,20 @@ def test_build_bundles_app_assets(monkeypatch):
     assert "--onedir" in cmd
     assert cmd[-1] == str(ROOT / "run.py")
 
-    value = cmd[cmd.index("--add-data") + 1]
-    source, destination = value.split(os.pathsep)
-    # Icons are resolved relative to the app package, so the bundle must mirror it.
-    assert destination == "app/assets"
-    assert source == str(ROOT / "app" / "assets")
-    # A relative source would be resolved against the spec file instead.
-    assert os.path.isabs(source)
+    # Collect every --add-data source:dest pair.
+    datas = {}
+    for index, item in enumerate(cmd):
+        if item == "--add-data":
+            source, destination = cmd[index + 1].split(os.pathsep)
+            datas[destination] = source
+
+    # Icons are resolved relative to the app package, so the bundle mirrors it.
+    assert datas["app/assets"] == str(ROOT / "app" / "assets")
+    # version.json is read at runtime by the updater; bundled data lands in _internal.
+    assert datas["."] == str(ROOT / "version.json")
+
+    for source in datas.values():
+        # A relative source would be resolved against the spec file instead.
+        assert os.path.isabs(source)
 
 

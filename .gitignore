@@ -17,6 +17,9 @@ dist/
 # PyInstaller
 *.spec
 
+# Updater staging area
+.update/
+
 # Test / coverage
 .pytest_cache/
 .coverage

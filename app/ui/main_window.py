@@ -28,6 +28,7 @@ from app.core.file_detector import FileDetector
 from app.core.format_registry import FormatRegistry
 from app.core.job_manager import JobManager
 from app.core.preflight import ConflictDecision
+from app.core.updater.installer import spawn_updater
 from app.models.conversion_job import ConversionJob, JobStatus
 from app.services.external_tools import ExternalTools
 from app.services.settings import OutputMode, Settings
@@ -317,7 +318,20 @@ class MainWindow(QMainWindow):
                 apply_theme(app, self.settings.theme)
 
     def _open_about(self) -> None:
-        AboutDialog(self).exec()
+        AboutDialog(self, on_update_ready=self._install_update).exec()
+
+    def _install_update(self, staged_root: Path, version: str) -> None:
+        """Hand the staged package to the updater process and exit.
+
+        The updater waits for this process to go away before it replaces the
+        installed files.
+        """
+        try:
+            spawn_updater(staged_root, version)
+        except OSError as exc:
+            QMessageBox.warning(self, "Update", f"Could not start the updater: {exc}")
+            return
+        QApplication.instance().quit()
 
     def closeEvent(self, event) -> None:  # noqa: N802
         # Quitting while jobs run used to exit silently, leaving FFmpeg/LibreOffice

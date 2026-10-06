@@ -44,8 +44,20 @@ def build_registry(external_tools: ExternalTools) -> FormatRegistry:
 
 
 def main() -> int:
+    # The updater process runs the same executable with --update; it must not
+    # create a QApplication, it only swaps files and relaunches.
+    if "--update" in sys.argv:
+        from app.core.updater.apply import run_from_cli
+
+        return run_from_cli(sys.argv[1:])
+
     setup_logging()
     settings = Settings.load()
+
+    # Clear whatever a finished update left behind (best-effort).
+    from app.core.updater.installer import cleanup_staging
+
+    cleanup_staging()
 
     app = QApplication(sys.argv)
     app.setApplicationName("FileForge")

@@ -102,3 +102,28 @@ Application settings and logs are stored in the user's configuration directory:
 
 * **Linux:** `~/.config/FileForge/`
 * **Windows:** `%APPDATA%\FileForge\`
+
+## Releases and updates
+
+Releases are built by `.github/workflows/build.yml`: pushing a tag `v*` builds the
+Linux and Windows packages and attaches them to a GitHub Release. In the app,
+**About → ?** opens the version dialog, which checks for a newer release, shows the
+release notes and can download and install it.
+
+Bump `version.json` before tagging — a package whose `version.json` does not match the
+release tag is refused:
+
+```bash
+# version.json -> {"version": "1.0.1"}
+git tag v1.0.1
+git push origin v1.0.1
+```
+
+How the update works:
+
+* Checking and downloading work anywhere, but **installing** is only offered from a
+  packaged build — over a source checkout it would overwrite the repository.
+* The app never overwrites itself. It stages the package under `.update/<version>/`
+  and starts a separate updater process, which waits for the app to exit, swaps the
+  files (keeping a backup and rolling back if verification fails) and relaunches.
+
