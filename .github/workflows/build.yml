@@ -2,9 +2,7 @@ name: build
 
 on:
   push:
-    branches: [main]
     tags: ["v*"]
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -42,12 +40,10 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: pytest -q
 
-  # Packages are only built for a release (a v* tag) or a manual run — pushing to
-  # main just runs the tests above.
+  # Only runs for a release: this workflow is triggered by a v* tag or manually.
   build:
     name: Build (${{ matrix.os }})
     needs: test
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
