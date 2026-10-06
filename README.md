@@ -16,6 +16,10 @@ A desktop file conversion application written in Python with a PyQt6 interface.
 
 Supported platforms: **Windows and Linux**.
 
+## Release
+
+Prebuilt standalone builds (Windows / Linux) are published on [GitHub Releases](https://github.com/tqthangdev/file-forge/releases) — no Python installation required. Pushing a `v*` tag triggers the CI build.
+
 ## Requirements
 
 * Python 3.10+
