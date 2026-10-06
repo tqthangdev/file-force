@@ -10,6 +10,7 @@ stepper buttons) and lives in ``widgets.py``.
 """
 from __future__ import annotations
 
+from PyQt6 import sip
 from PyQt6.QtCore import QEvent, QObject, Qt
 from PyQt6.QtWidgets import QAbstractButton, QApplication, QComboBox
 
@@ -32,18 +33,18 @@ class _PointerCursorFilter(QObject):
 
 
 _filter: _PointerCursorFilter | None = None
-_app: QApplication | None = None
 
 
 def install_pointer_cursors(app: QApplication) -> None:
     """Install the filter so every interactive control shows a hand cursor.
 
     Installing an event filter on the application object makes it receive the events
-    sent to every widget in the process. Re-installs if called with a new application.
+    sent to every widget in the process. The app owns the filter (parent + sip
+    ownership), so nothing is deleted twice at interpreter shutdown.
     """
-    global _filter, _app
-    if _app is app:
+    global _filter
+    if _filter is not None:
         return
-    _filter = _PointerCursorFilter()
+    _filter = _PointerCursorFilter(app)
     app.installEventFilter(_filter)
-    _app = app
+    sip.transferto(_filter, app)

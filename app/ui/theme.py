@@ -7,6 +7,7 @@ strings, and switching themes updates them all at once.
 """
 from __future__ import annotations
 
+from PyQt6 import sip
 from PyQt6.QtCore import QEvent, QObject, Qt
 from PyQt6.QtGui import QColor, QIcon, QPalette
 from PyQt6.QtWidgets import QApplication, QDialogButtonBox, QWidget
@@ -42,17 +43,20 @@ class _DialogButtonIconFilter(QObject):
 
 
 _icon_filter: _DialogButtonIconFilter | None = None
-_icon_filter_app: QApplication | None = None
 
 
 def install_dialog_button_icon_filter(app: QApplication) -> None:
-    """Install the filter (once per application) that strips dialog button icons."""
-    global _icon_filter, _icon_filter_app
-    if _icon_filter_app is app:
+    """Install the filter that strips dialog button icons.
+
+    The app owns the filter (parent + sip ownership), so nothing is deleted twice at
+    interpreter shutdown.
+    """
+    global _icon_filter
+    if _icon_filter is not None:
         return
-    _icon_filter = _DialogButtonIconFilter()
+    _icon_filter = _DialogButtonIconFilter(app)
     app.installEventFilter(_icon_filter)
-    _icon_filter_app = app
+    sip.transferto(_icon_filter, app)
 
 
 # Explicit light palette, so choosing "Light" stays light even when the operating

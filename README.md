@@ -139,14 +139,15 @@ git-ignored.
 
 ### Keyboard shortcuts
 
+All shortcuts are Ctrl-based (plus `Delete`, the usual key for removing list rows).
+
 | Shortcut | Action |
 |---|---|
 | `Ctrl+O` | Add files |
-| `F5` / `Ctrl+R` | Convert All |
+| `Ctrl+R` | Convert All |
 | `Ctrl+L` | Clear queue |
 | `Delete` | Remove selected rows |
 | `Ctrl+,` | Settings |
-| `F1` | About |
 | `Ctrl+Q` | Quit |
 
 ## Running tests
@@ -162,16 +163,3 @@ Stored in the per-user directory via `platformdirs` (not in the repository):
 - Linux: `~/.config/FileForge/`
 - Windows: `%APPDATA%\FileForge\`
 
-## Roadmap
-
-- **v0.1** — Image converter (PNG ↔ JPG/WEBP/ICO, batches, cancel, atomic writes)
-- **v0.2** — Documents (LibreOffice): headless conversion, isolated profile per worker,
-  timeout, cancellable process, manual tool path + Re-detect
-- **v0.3** — Audio (FFmpeg): formats, `-progress pipe:1` parse, cancellable process,
-  atomic output
-- **v0.4** — Video (FFmpeg): `mp4`/`mkv`/`webm`/`mov`/`avi`, per-container codec
-  defaults (H.264/AAC, VP9/Opus, MPEG-4/MP3), tuned VP9 (`-row-mt`, `-cpu-used`),
-  cancellable process, shared FFmpeg runner
-- **v0.5** — UX: per-file options dialog generated from `options_schema()`, image
-  preview, light/dark/system theme, keyboard shortcuts, error details
-- **v1.0** — Stable release, comprehensive tests, packaging

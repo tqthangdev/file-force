@@ -76,21 +76,20 @@ class MainWindow(QMainWindow):
         self.add_files_action.triggered.connect(self._add_files)
 
         self.convert_action = QAction("Convert All", self)
-        self.convert_action.setShortcuts(
-            [QKeySequence("F5"), QKeySequence("Ctrl+R")]
-        )
+        self.convert_action.setShortcut(QKeySequence("Ctrl+R"))
         self.convert_action.triggered.connect(self._convert_all)
 
         self.clear_action = QAction("Clear queue", self)
         self.clear_action.setShortcut(QKeySequence("Ctrl+L"))
         self.clear_action.triggered.connect(self.manager.clear)
 
-        settings_action = QAction("Settings", self)
+        settings_action = QAction("Settings…", self)
         settings_action.setShortcut(QKeySequence("Ctrl+,"))
         settings_action.triggered.connect(self._open_settings)
 
+        # No shortcut: the shortcuts are deliberately all Ctrl-based (plus Delete for
+        # list rows), so About lives in the menu only.
         about_action = QAction("About", self)
-        about_action.setShortcut(QKeySequence("F1"))
         about_action.triggered.connect(self._open_about)
 
         quit_action = QAction("Quit", self)

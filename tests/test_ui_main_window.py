@@ -62,10 +62,21 @@ def test_quit_action_has_ctrl_q(qtbot, tmp_path):
     assert quits[0].shortcut().toString() == "Ctrl+Q"
 
 
-def test_convert_all_shortcuts(qtbot, tmp_path):
+def test_convert_all_shortcut(qtbot, tmp_path):
     window, _ = _window(qtbot, tmp_path)
     shortcuts = {s.toString() for s in window.convert_action.shortcuts()}
-    assert shortcuts == {"F5", "Ctrl+R"}
+    assert shortcuts == {"Ctrl+R"}
+
+
+def test_shortcuts_are_ctrl_based(qtbot, tmp_path):
+    # No function keys: the whole scheme is Ctrl-based, plus Delete for list rows.
+    window, _ = _window(qtbot, tmp_path)
+    for action in window.findChildren(QAction):
+        shortcut = action.shortcut().toString()
+        if shortcut:
+            assert shortcut.startswith("Ctrl+") or shortcut in ("Del",), (
+                f"{action.text()!r} uses {shortcut!r}"
+            )
 
 
 def test_add_files_button_is_icon_only(qtbot, tmp_path):
