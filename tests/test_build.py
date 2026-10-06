@@ -64,10 +64,23 @@ def test_ensure_pyinstaller_reports_a_failed_install(monkeypatch, capsys):
     assert "Could not install PyInstaller" in capsys.readouterr().err
 
 
-def test_in_virtualenv_matches_the_test_interpreter():
-    # The suite runs from the project venv, so this must be True there.
+def test_in_virtualenv_reads_the_environment(monkeypatch):
+    # Environment-independent: assert how the check is made, not that this
+    # particular interpreter happens to be a venv (CI's toolcache Python is not).
+    monkeypatch.setenv("VIRTUAL_ENV", "/some/venv")
     assert build.in_virtualenv() is True
-    assert build.pyinstaller_available() is True
+
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+    monkeypatch.setattr(build.sys, "prefix", "/usr")
+    monkeypatch.setattr(build.sys, "base_prefix", "/usr")
+    assert build.in_virtualenv() is False
+
+    monkeypatch.setattr(build.sys, "base_prefix", "/usr/lib/venv-base")
+    assert build.in_virtualenv() is True
+
+
+def test_pyinstaller_available_is_a_bool():
+    assert isinstance(build.pyinstaller_available(), bool)
 
 
 def test_start_scripts_bootstrap_and_run():
