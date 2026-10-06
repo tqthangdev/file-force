@@ -245,11 +245,22 @@ def set_tool_status(label: QWidget, ok: bool) -> None:
 
 
 def apply_theme(app: QApplication, theme: str) -> None:
-    """Apply a theme by name. Unknown values fall back to the system palette."""
+    """Apply a theme by name. Unknown values fall back to the system palette.
+
+    Re-applying is a no-op when nothing changes: ``setStyleSheet`` on a live
+    application re-polishes every existing widget, which is both wasteful and a
+    known source of crashes, so it is only done for a real change.
+    """
     if theme == "dark":
-        app.setPalette(dark_palette())
+        palette = dark_palette()
     elif theme == "light":
-        app.setPalette(light_palette())
+        palette = light_palette()
     else:  # "system" — keep the platform's own light/dark palette
-        app.setPalette(app.style().standardPalette())
-    app.setStyleSheet(stylesheet(theme, app))
+        palette = app.style().standardPalette()
+
+    sheet = stylesheet(theme, app)
+    if app.styleSheet() == sheet and app.palette() == palette:
+        return
+
+    app.setPalette(palette)
+    app.setStyleSheet(sheet)
