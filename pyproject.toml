@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "file-converter"
+version = "0.1.0"
+description = "Desktop file conversion application (image, audio, video, documents)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "FileForge" }]
+dependencies = [
+    "PyQt6>=6.6",
+    "Pillow>=10.0",
+    "platformdirs>=4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-qt>=4.4",
+]
+build = [
+    "pyinstaller>=6.0",
+]
+
+[project.gui-scripts]
+file-converter = "run:main"
+
+[tool.setuptools]
+packages = [
+    "app",
+    "app.ui",
+    "app.ui.dialogs",
+    "app.ui.queues",
+    "app.core",
+    "app.converters",
+    "app.models",
+    "app.services",
+    "app.utils",
+]
+py-modules = ["run"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+qt_api = "pyqt6"
