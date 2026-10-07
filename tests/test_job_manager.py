@@ -109,11 +109,13 @@ def test_batch_finished_signal_emitted(qtbot, tmp_path):
 def test_set_target_format_resets_job(tmp_path):
     manager, _ = _build(FakeConverter(pairs={("png", "jpg"), ("png", "webp")}))
     job = _job(tmp_path / "a.png", "png", "jpg")
+    job.options = {"quality": 50, "remove_audio": True}
     manager.add_jobs([job])
 
     manager.set_target_format(job, "webp")
 
     assert job.target_format == "webp"
+    assert job.options == {}
     assert job.status is JobStatus.WAITING
 
 

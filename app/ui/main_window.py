@@ -61,6 +61,7 @@ class MainWindow(QMainWindow):
 
         self._scan_workers: set[FolderScanWorker] = set()
         self._ask_all_decision: ConflictDecision | None = None
+        self._preferred_target_format: str | None = None
 
         self.setWindowTitle("FileForge")
         self.setWindowIcon(app_icon())
@@ -127,7 +128,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(queue_label)
 
         self.model = QueueModel(self.manager, self)
-        self.delegate = QueueDelegate(self.registry, self.manager.set_target_format, self)
+        self.delegate = QueueDelegate(self.registry, self._set_target_format, self)
         self.view = QueueView(self.model, self.delegate, self)
         self.view.options_requested.connect(self._edit_options)
         self.view.error_requested.connect(self._show_error)
@@ -246,12 +247,20 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Imported {len(new_jobs)} file(s).")
 
     def _default_target(self, source_format: str, targets: list[str]) -> str:
-        # Video targets come before audio so a video source defaults to a video output
-        # (audio extraction is available in the menu, just not the default).
-        for preferred in ("jpg", "png", "pdf", "mp4", "webm", "mkv", "mp3"):
-            if preferred in targets and preferred != source_format:
-                return preferred
+        preferred = self._preferred_target_format
+        if preferred in targets and preferred != source_format:
+            return preferred
+        # Audio before video: a video source defaults to extracting the audio track
+        # (mp3), with the video targets still available in the format menu.
+        for candidate in ("jpg", "png", "pdf", "mp3", "mp4", "webm", "mkv"):
+            if candidate in targets and candidate != source_format:
+                return candidate
         return targets[0]
+
+    def _set_target_format(self, job: ConversionJob, target_format: str) -> None:
+        self.manager.set_target_format(job, target_format)
+        if job.target_format == target_format:
+            self._preferred_target_format = target_format
 
     # ------------------------------------------------------------------ actions
     def _add_files(self) -> None:

@@ -77,6 +77,7 @@ class JobManager(QObject):
         if job.status is JobStatus.CONVERTING or job.target_format == target_format:
             return
         job.target_format = target_format
+        job.options.clear()
         job.output = None
         job.selected_engine = None
         job.progress = 0

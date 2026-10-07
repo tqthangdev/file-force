@@ -16,9 +16,11 @@ from app.ui.main_window import MainWindow
 from tests.fakes import FakeConverter
 
 
-def _window(qtbot, tmp_path, delay: float = 0.0) -> tuple[MainWindow, JobManager]:
+def _window(
+    qtbot, tmp_path, delay: float = 0.0, pairs=None
+) -> tuple[MainWindow, JobManager]:
     registry = FormatRegistry()
-    registry.register(FakeConverter(delay=delay))
+    registry.register(FakeConverter(delay=delay, pairs=pairs))
     settings = Settings(output_directory=str(tmp_path), output_mode="same_folder")
     tools = ExternalTools(settings)
     manager = JobManager(registry, ConverterManager(registry, tools), settings)
@@ -66,6 +68,29 @@ def test_convert_all_shortcut(qtbot, tmp_path):
     window, _ = _window(qtbot, tmp_path)
     shortcuts = {s.toString() for s in window.convert_action.shortcuts()}
     assert shortcuts == {"Ctrl+R"}
+
+
+def test_new_video_jobs_reuse_last_selected_target(qtbot, tmp_path):
+    window, manager = _window(
+        qtbot, tmp_path, pairs={("mp4", "webm"), ("mp4", "mp3")}
+    )
+    previous_job = ConversionJob(
+        source=tmp_path / "old.mp4", source_format="mp4", target_format="webm"
+    )
+    manager.add_jobs([previous_job])
+
+    window._set_target_format(previous_job, "mp3")
+
+    assert window._default_target("mp4", ["webm", "mp3"]) == "mp3"
+
+
+def test_video_jobs_default_to_mp3(qtbot, tmp_path):
+    window, _ = _window(
+        qtbot, tmp_path, pairs={("mp4", "webm"), ("mp4", "mkv"), ("mp4", "mp3")}
+    )
+
+    assert window._default_target("mp4", ["mkv", "mp3", "webm"]) == "mp3"
+    assert window._default_target("png", ["jpg", "webp"]) == "jpg"
 
 
 def test_shortcuts_are_ctrl_based(qtbot, tmp_path):
