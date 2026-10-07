@@ -69,7 +69,6 @@ class VersionDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Version")
         self.setModal(True)
-        self.setMinimumWidth(440)
 
         # Set once an update is prepared; read by the caller to start the swap.
         self.staged_root: Path | None = None
@@ -103,6 +102,9 @@ class VersionDialog(QDialog):
         self.status_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
+        # The layout uses SetMinimumSize, which overrides QWidget.setMinimumWidth, so
+        # the dialog width has to come from a widget that is always visible.
+        self.status_label.setMinimumWidth(540)
         layout.addWidget(self.status_label)
 
         # Release notes: a collapse/expand header with the full text below.
