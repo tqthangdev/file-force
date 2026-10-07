@@ -51,8 +51,24 @@ jobs:
           pip install -e ".[build]"
           python build.py
 
+      - name: Verify Linux build
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -e
+
           test -f dist/FileForge/FileForge
           test -f dist/FileForge/_internal/version.json
+
+          # These must come from the host: a bundled copy crashes on the host's X
+          # server (libxkbcommon) or cannot read its font config (libfontconfig).
+          for lib in libxkbcommon.so.0 libxkbcommon-x11.so.0 libfontconfig.so.1; do
+            if [ -e "dist/FileForge/_internal/$lib" ]; then
+              echo "ERROR: $lib must come from the host, not from the bundle"
+              exit 1
+            fi
+          done
+          echo "OK: no host-specific libraries bundled"
 
           echo "=== Linux build ==="
           ls -lah dist/FileForge

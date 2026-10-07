@@ -26,12 +26,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 
-# The one library that must come from the host: a libfontconfig built on another
-# distribution cannot parse the host's fontconfig configuration ("invalid constant
-# used") and the app segfaults while Qt loads its fonts. Everything else stays as
-# PyInstaller produced it — trimming more than this mixes Qt with the host's
-# libraries and breaks startup in the other direction.
-_UNBUNDLED_LIBS = ("libfontconfig.so",)
+# Libraries that must come from the host, not from the bundle:
+#
+#   libxkbcommon   keyboard layout handling. The keymap comes from the X server, so
+#                  a copy built on another distribution segfaults in
+#                  xkb_state_key_get_layout() while Qt handles an X event.
+#   libfontconfig  reads the host's font configuration; a foreign copy fails to
+#                  parse it ("invalid constant used : ui-monospace").
+#
+# Everything else stays as PyInstaller produced it — trimming more mixes Qt with
+# the host's libraries and breaks startup in the other direction.
+_UNBUNDLED_LIBS = ("libxkbcommon", "libfontconfig.so")
 
 
 def remove_unbundled_libs(dist_dir: Path) -> list[str]:

@@ -83,6 +83,31 @@ def test_pyinstaller_available_is_a_bool():
     assert isinstance(build.pyinstaller_available(), bool)
 
 
+def test_remove_unbundled_libs_keeps_everything_else(tmp_path):
+    # A foreign libxkbcommon segfaults in xkb_state_key_get_layout() on the host's
+    # X server, and a foreign libfontconfig cannot read the host's font config.
+    internal = tmp_path / "_internal"
+    internal.mkdir()
+    for name in (
+        "libxkbcommon.so.0",
+        "libxkbcommon-x11.so.0",
+        "libfontconfig.so.1",
+        "libQt6Core.so.6",
+        "libfreetype.so.6",
+    ):
+        (internal / name).write_text("x", encoding="utf-8")
+
+    removed = build.remove_unbundled_libs(tmp_path)
+
+    assert sorted(removed) == [
+        "libfontconfig.so.1",
+        "libxkbcommon-x11.so.0",
+        "libxkbcommon.so.0",
+    ]
+    assert (internal / "libQt6Core.so.6").exists()
+    assert (internal / "libfreetype.so.6").exists()
+
+
 def test_start_scripts_bootstrap_and_run():
     # Dependencies come from pyproject.toml, so the launcher bootstraps the venv itself.
     sh = (ROOT / "start.sh").read_text()
