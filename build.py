@@ -26,39 +26,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 
-# Shared libraries that must come from the host system, never from the bundle.
-# Shipping another distribution's copies makes system tools (ffmpeg, soffice) load
-# an incompatible ABI — e.g. "libass.so.9: undefined symbol:
-# FcConfigSetDefaultSubstitute" when ffmpeg picks up the bundled libfontconfig —
-# and it can break Qt's font handling too. PyInstaller collects them because the
-# build machine's Qt links against them.
-_SYSTEM_LIB_PREFIXES = (
-    "libfontconfig.so",
-    "libfreetype.so",
-    "libharfbuzz.so",
-    "libfribidi.so",
-    "libglib-2.0.so",
-    "libjson-glib-1.0.so",
-    "libX11.so",
-    "libX11-xcb.so",
-    "libxcb",
-    "libxkbcommon",
-    "libwayland-",
-)
-
-
-def prune_bundled_system_libs(dist_dir: Path) -> list[str]:
-    """Delete bundled copies of system libraries; returns the names removed."""
-    internal = dist_dir / "_internal"
-    if not internal.is_dir():
-        return []
-
-    removed = []
-    for library in sorted(internal.glob("lib*.so*")):
-        if library.name.startswith(_SYSTEM_LIB_PREFIXES):
-            library.unlink()
-            removed.append(library.name)
-    return removed
 
 
 def in_virtualenv() -> bool:
@@ -161,14 +128,6 @@ def build(name: str, onefile: bool, console: bool) -> int:
 
     print("Running:", " ".join(command))
     exit_code = subprocess.call(command, cwd=str(ROOT))
-
-    if exit_code == 0 and sys.platform != "win32":
-        removed = prune_bundled_system_libs(ROOT / "dist" / name)
-        if removed:
-            print(f"\nRemoved {len(removed)} bundled system librar(y/ies) that must "
-                  f"come from the host:")
-            for library in removed:
-                print("   -", library)
 
     return exit_code
 
