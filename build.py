@@ -26,6 +26,27 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 
+# The one library that must come from the host: a libfontconfig built on another
+# distribution cannot parse the host's fontconfig configuration ("invalid constant
+# used") and the app segfaults while Qt loads its fonts. Everything else stays as
+# PyInstaller produced it — trimming more than this mixes Qt with the host's
+# libraries and breaks startup in the other direction.
+_UNBUNDLED_LIBS = ("libfontconfig.so",)
+
+
+def remove_unbundled_libs(dist_dir: Path) -> list[str]:
+    """Drop libraries that must come from the host; returns the names removed."""
+    internal = dist_dir / "_internal"
+    if not internal.is_dir():
+        return []
+
+    removed = []
+    for library in sorted(internal.glob("lib*.so*")):
+        if library.name.startswith(_UNBUNDLED_LIBS):
+            library.unlink()
+            removed.append(library.name)
+    return removed
+
 
 
 def in_virtualenv() -> bool:
@@ -128,6 +149,11 @@ def build(name: str, onefile: bool, console: bool) -> int:
 
     print("Running:", " ".join(command))
     exit_code = subprocess.call(command, cwd=str(ROOT))
+
+    if exit_code == 0 and sys.platform != "win32":
+        removed = remove_unbundled_libs(ROOT / "dist" / name)
+        for library in removed:
+            print(f"Removed bundled {library} (must come from the host)")
 
     return exit_code
 
