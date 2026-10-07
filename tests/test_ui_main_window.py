@@ -5,6 +5,7 @@ from pathlib import Path
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import QMessageBox
+from PIL import Image
 
 from app.core.converter_manager import ConverterManager
 from app.core.format_registry import FormatRegistry
@@ -17,11 +18,13 @@ from tests.fakes import FakeConverter
 
 
 def _window(
-    qtbot, tmp_path, delay: float = 0.0, pairs=None
+    qtbot, tmp_path, delay: float = 0.0, pairs=None, mode: str = "single"
 ) -> tuple[MainWindow, JobManager]:
     registry = FormatRegistry()
     registry.register(FakeConverter(delay=delay, pairs=pairs))
-    settings = Settings(output_directory=str(tmp_path), output_mode="same_folder")
+    settings = Settings(
+        output_directory=str(tmp_path), output_mode="same_folder", image_pdf_mode=mode
+    )
     tools = ExternalTools(settings)
     manager = JobManager(registry, ConverterManager(registry, tools), settings)
     window = MainWindow(manager, registry, settings, tools)
@@ -91,6 +94,62 @@ def test_video_jobs_default_to_mp3(qtbot, tmp_path):
 
     assert window._default_target("mp4", ["mkv", "mp3", "webm"]) == "mp3"
     assert window._default_target("png", ["jpg", "webp"]) == "jpg"
+
+
+# ------------------------------------------------------------------ image to PDF
+def test_image_pdf_menu_offers_both_modes(qtbot, tmp_path):
+    window, _ = _window(qtbot, tmp_path)
+
+    titles = [action.text() for action in window.menuBar().actions()]
+    assert "File" not in titles  # placeholder name from the first sketch
+    assert "Image → PDF" in titles
+    assert window.single_pdf_action.isChecked() is True  # single is the default
+    assert window.multiple_pdf_action.isChecked() is False
+    assert window.multiple_pdf_action.shortcut().toString() == "Ctrl+2"
+
+
+def test_choosing_multiple_persists_and_defaults_images_to_pdf(
+    qtbot, tmp_path, monkeypatch
+):
+    # Settings are written to a real file: never touch the developer's config.
+    monkeypatch.setattr(
+        "app.services.settings.config_file", lambda: tmp_path / "settings.json"
+    )
+    window, _ = _window(qtbot, tmp_path, pairs={("png", "pdf"), ("png", "jpg")})
+
+    window.multiple_pdf_action.trigger()
+
+    assert window.settings.image_pdf_mode == "merge"
+    assert window.multiple_pdf_action.isChecked() is True
+    assert window.single_pdf_action.isChecked() is False
+    assert window._default_target("png", ["jpg", "pdf"]) == "pdf"
+    written = (tmp_path / "settings.json").read_text(encoding="utf-8")
+    assert '"image_pdf_mode": "merge"' in written
+
+
+def test_switching_back_to_single_keeps_one_pdf_per_image(
+    qtbot, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.services.settings.config_file", lambda: tmp_path / "settings.json"
+    )
+    window, _ = _window(qtbot, tmp_path, pairs={("png", "pdf")}, mode="merge")
+    assert window.multiple_pdf_action.isChecked() is True
+
+    window.single_pdf_action.trigger()
+
+    assert window.settings.image_pdf_mode == "single"
+    assert window.single_pdf_action.isChecked() is True
+
+
+def test_merge_mode_imports_images_as_pdf_pages(qtbot, tmp_path):
+    window, manager = _window(qtbot, tmp_path, pairs={("png", "pdf")}, mode="merge")
+    for name in ("a.png", "b.png"):
+        Image.new("RGB", (8, 8), "red").save(tmp_path / name)
+
+    window._import_files([tmp_path / "a.png", tmp_path / "b.png"])
+
+    assert [job.target_format for job in manager.jobs] == ["pdf", "pdf"]
 
 
 def test_shortcuts_are_ctrl_based(qtbot, tmp_path):

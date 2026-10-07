@@ -32,6 +32,11 @@ class ConflictDecision(Enum):
     RENAME = "rename"
 
 
+# Name of the single file a merged job writes (several images -> one PDF). Renames
+# add a counter, as with any other conflict.
+MERGED_STEM = "merged"
+
+
 @dataclass
 class PreflightResult:
     ready: list[ConversionJob] = field(default_factory=list)
@@ -73,47 +78,75 @@ class Preflight:
     def prepare(self, job: ConversionJob, reserved: set[Path] | None = None) -> bool:
         reserved = reserved if reserved is not None else set()
 
-        # 1. Resolve output path
+        # 1. Resolve output path. A merged job writes a single file for the whole
+        #    group, so its name cannot come from one of its sources.
         output_dir = Path(self.settings.output_dir_for(job.source))
         extension = self.registry.primary_extension(job.target_format)
-        candidate = build_output_path(
-            job.source,
-            output_dir,
-            extension,
-            self.settings.output_suffix,
-            avoid_existing=False,
-        )
+        if job.is_merge_leader:
+            candidate = (
+                output_dir / f"{MERGED_STEM}{self.settings.output_suffix}.{extension}"
+            )
+        else:
+            candidate = build_output_path(
+                job.source,
+                output_dir,
+                extension,
+                self.settings.output_suffix,
+                avoid_existing=False,
+            )
 
         # 2. Select engine
         converter = self.manager.select_converter(job.source_format, job.target_format)
         if converter is None:
             reason = self.manager.reason_unavailable(job.source_format, job.target_format)
-            job.status = JobStatus.BLOCKED
-            job.error = reason or "No engine is available for this conversion."
-            return False
+            return self._reject(job, JobStatus.BLOCKED, reason or "No engine is available for this conversion.")
         job.selected_engine = converter.name
 
-        # 3. Validate
-        problems = converter.validate(
-            job.source_format, job.target_format, job.source, job.options
-        )
+        # 3. Validate every input — a merged job has one per page.
+        problems: list[str] = []
+        for path in job.sources:
+            for problem in converter.validate(
+                job.source_format, job.target_format, path, job.options
+            ):
+                if problem not in problems:
+                    problems.append(problem)
         if problems:
-            job.status = JobStatus.BLOCKED
-            job.error = "; ".join(problems)
-            return False
+            return self._reject(job, JobStatus.BLOCKED, "; ".join(problems))
 
         # 4. Resolve conflicts
         resolved = self._resolve_conflict(job, candidate, reserved)
         if resolved is None:
-            job.status = JobStatus.CANCELLED
-            job.error = f"Skipped: {candidate.name} already exists."
-            return False
+            return self._reject(
+                job, JobStatus.CANCELLED, f"Skipped: {candidate.name} already exists."
+            )
 
         job.output = resolved
         reserved.add(resolved)
         job.status = JobStatus.WAITING
         job.error = None
+        self._mirror_to_group(job)
         return True
+
+    def _reject(self, job: ConversionJob, status: JobStatus, message: str) -> bool:
+        job.status = status
+        job.error = message
+        self._mirror_to_group(job)
+        return False
+
+    @staticmethod
+    def _mirror_to_group(job: ConversionJob) -> None:
+        """Give every other row of a merge group the leader's outcome."""
+        group = job.merge
+        if group is None:
+            return
+        for member in group.jobs:
+            if member is job:
+                continue
+            member.output = job.output
+            member.selected_engine = job.selected_engine
+            member.status = job.status
+            member.error = job.error
+            member.progress = job.progress
 
     # ------------------------------------------------------------------ conflicts
     def _resolve_conflict(

@@ -18,6 +18,17 @@ class ConversionContext:
     options: dict = field(default_factory=dict)
     progress_callback: Callable[[int], None] = lambda _p: None
     cancel_event: threading.Event = field(default_factory=threading.Event)
+    # Every input of the job, in order. Only a merged job (a converter that supports
+    # it, e.g. several images written into one PDF) has more than one.
+    sources: list[Path] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not self.sources:
+            self.sources = [self.source]
+
+    @property
+    def merged(self) -> bool:
+        return len(self.sources) > 1
 
     @property
     def cancelled(self) -> bool:

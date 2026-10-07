@@ -58,6 +58,7 @@ class ConversionWorker(QRunnable):
             options=dict(job.options),
             progress_callback=lambda percent: self.signals.progress.emit(job, percent),
             cancel_event=self.cancel_event,
+            sources=list(job.sources),
         )
 
         try:

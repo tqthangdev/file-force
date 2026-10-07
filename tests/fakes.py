@@ -73,6 +73,7 @@ class FakeConverter(BaseConverter):
         delay: float = 0.0,
         parallel: int = 2,
         validate_problems: list[str] | None = None,
+        merge_pairs: set[tuple[str, str]] | None = None,
     ) -> None:
         self.name = name
         self.priority = priority
@@ -83,10 +84,16 @@ class FakeConverter(BaseConverter):
         self._delay = delay
         self._parallel = parallel
         self._validate_problems = validate_problems or []
+        self._merge_pairs = set(merge_pairs or ())
         self.calls: list[Path] = []
+        self.merge_calls: list[list[Path]] = []
+        self.validated: list[Path] = []
 
     def supported_pairs(self) -> set[tuple[str, str]]:
         return set(self._pairs)
+
+    def supports_merge(self, source_format: str, target_format: str) -> bool:
+        return (source_format, target_format) in self._merge_pairs
 
     def is_available(self) -> bool:
         return self._available
@@ -98,10 +105,13 @@ class FakeConverter(BaseConverter):
         return self._parallel
 
     def validate(self, source_format, target_format, source, options) -> list[str]:
+        self.validated.append(source)
         return list(self._validate_problems)
 
     def convert(self, context: ConversionContext) -> Path:
         self.calls.append(context.source)
+        if context.merged:
+            self.merge_calls.append(list(context.sources))
         context.report(25)
         if self._delay:
             time.sleep(self._delay)

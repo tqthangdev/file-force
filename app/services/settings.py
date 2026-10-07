@@ -43,6 +43,13 @@ class ConflictMode(str, Enum):
     RENAME = "rename"
 
 
+class ImagePdfMode(str, Enum):
+    """What an image conversion to PDF produces."""
+
+    SINGLE = "single"  # one PDF per image (default)
+    MERGE = "merge"  # every queued image becomes a page of one PDF
+
+
 @dataclass
 class Settings:
     output_mode: str = OutputMode.SAME_FOLDER.value
@@ -53,6 +60,7 @@ class Settings:
     max_workers: int = 2
     recursive_import: bool = True
     theme: str = "system"
+    image_pdf_mode: str = ImagePdfMode.SINGLE.value
     ffmpeg_path: str = ""
     libreoffice_path: str = ""
 
@@ -87,3 +95,5 @@ class Settings:
 
     def clamps(self) -> None:
         self.max_workers = max(1, min(max_supported_workers(), int(self.max_workers)))
+        if self.image_pdf_mode not in {mode.value for mode in ImagePdfMode}:
+            self.image_pdf_mode = ImagePdfMode.SINGLE.value

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import struct
 import threading
 
@@ -194,4 +195,99 @@ def test_exif_orientation_is_applied(tmp_path):
     with Image.open(output) as result:
         # A 10x20 image stored with orientation 6 must be corrected to 20x10.
         assert result.size == (20, 10)
+
+
+# ------------------------------------------------------------------------ PDF
+def _pdf_page_count(path) -> int:
+    match = re.search(rb"/Count\s+(\d+)", path.read_bytes())
+    assert match, "not a PDF page tree"
+    return int(match.group(1))
+
+
+def _pdf_page_sizes(path) -> list[tuple[float, float]]:
+    """(width, height) of every page, in points."""
+    sizes = []
+    for box in re.findall(rb"/MediaBox\s*\[\s*([^\]]+)\]", path.read_bytes()):
+        values = [float(v) for v in box.split()]
+        sizes.append((values[2] - values[0], values[3] - values[1]))
+    return sizes
+
+
+def test_png_to_pdf_writes_one_page(tmp_path):
+    source = tmp_path / "a.png"
+    Image.new("RGB", (150, 150), (10, 20, 30)).save(source)
+    output = tmp_path / "a.pdf"
+
+    result = ImageConverter().convert(_context(source, output))
+
+    assert result == output
+    assert output.read_bytes().startswith(b"%PDF-")
+    assert _pdf_page_count(output) == 1
+
+
+def test_png_to_pdf_flattens_transparency(tmp_path):
+    # A PDF page cannot store alpha; an RGBA source must still convert.
+    source = tmp_path / "alpha.png"
+    Image.new("RGBA", (40, 40), (255, 0, 0, 0)).save(source)
+    output = tmp_path / "alpha.pdf"
+
+    ImageConverter().convert(_context(source, output))
+
+    assert _pdf_page_count(output) == 1
+
+
+def test_pdf_dpi_option_scales_the_page(tmp_path):
+    source = tmp_path / "a.png"
+    Image.new("RGB", (150, 150)).save(source)
+    output = tmp_path / "a.pdf"
+
+    ImageConverter().convert(_context(source, output, options={"dpi": 300}))
+
+    # 150 px at 300 dpi is half an inch, i.e. 36 points.
+    assert _pdf_page_sizes(output) == [(36.0, 36.0)]
+
+
+def test_merged_images_become_one_pdf_page_each(tmp_path):
+    sources = []
+    for index, size in enumerate(((200, 100), (100, 300), (150, 150))):
+        path = tmp_path / f"{index}.png"
+        Image.new("RGB", size, (index * 40, 0, 0)).save(path)
+        sources.append(path)
+    output = tmp_path / "merged.pdf"
+
+    result = ImageConverter().convert(
+        ConversionContext(source=sources[0], output=output, sources=sources)
+    )
+
+    assert result == output
+    assert _pdf_page_count(output) == 3
+    # 150 dpi: 200px -> 96pt, 100px -> 48pt, 150px -> 72pt.
+    assert _pdf_page_sizes(output) == [(96.0, 48.0), (48.0, 144.0), (72.0, 72.0)]
+
+
+def test_merged_context_with_non_pdf_output_raises(tmp_path):
+    first, second = tmp_path / "a.png", tmp_path / "b.png"
+    for path in (first, second):
+        Image.new("RGB", (8, 8)).save(path)
+
+    with pytest.raises(ConversionError):
+        ImageConverter().convert(
+            ConversionContext(
+                source=first, output=tmp_path / "merged.jpg", sources=[first, second]
+            )
+        )
+
+
+def test_merge_is_only_offered_for_pdf():
+    converter = ImageConverter()
+    assert converter.supports_merge("png", "pdf") is True
+    assert converter.supports_merge("jpg", "pdf") is True
+    assert converter.supports_merge("png", "jpg") is False
+    assert converter.supports_merge("pdf", "png") is False
+
+
+def test_pdf_is_offered_as_a_target():
+    pairs = ImageConverter().supported_pairs()
+    assert ("png", "pdf") in pairs
+    assert ("jpg", "pdf") in pairs
 

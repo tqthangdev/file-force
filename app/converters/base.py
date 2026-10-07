@@ -31,6 +31,15 @@ class BaseConverter:
         """False if a required external tool is missing."""
         raise NotImplementedError
 
+    def supports_merge(self, source_format: str, target_format: str) -> bool:
+        """True when several inputs can be written into one output by this pair.
+
+        A merged job carries every input in ``context.sources`` and is converted by a
+        single ``convert()`` call, so the output has to be a format that can hold
+        them all (the image engine merges into one PDF, one page per image).
+        """
+        return False
+
     def unavailable_reason(self) -> str | None:
         """Human-readable reason ``is_available`` is False, or None."""
         return None

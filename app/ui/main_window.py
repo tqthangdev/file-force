@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QThreadPool
-from PyQt6.QtGui import QAction, QKeySequence
+from PyQt6.QtGui import QAction, QActionGroup, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -31,7 +31,7 @@ from app.core.preflight import ConflictDecision
 from app.core.updater.installer import spawn_updater
 from app.models.conversion_job import ConversionJob, JobStatus
 from app.services.external_tools import ExternalTools
-from app.services.settings import OutputMode, Settings
+from app.services.settings import ImagePdfMode, OutputMode, Settings
 from app.ui.assets import app_icon
 from app.ui.dialogs.about_dialog import AboutDialog
 from app.ui.dialogs.convert_dialog import ConvertOptionsDialog
@@ -109,6 +109,46 @@ class MainWindow(QMainWindow):
         menu.addAction(about_action)
         menu.addSeparator()
         menu.addAction(quit_action)
+
+        # How images are written when the target is PDF: one file each, or one file
+        # for the whole queue. Radio-style, so exactly one is always checked.
+        self.single_pdf_action = QAction("Single — one PDF per image", self)
+        self.single_pdf_action.setShortcut(QKeySequence("Ctrl+1"))
+        self.single_pdf_action.setCheckable(True)
+        self.single_pdf_action.triggered.connect(
+            lambda: self._set_image_pdf_mode(ImagePdfMode.SINGLE)
+        )
+
+        self.multiple_pdf_action = QAction("Multiple — all images in one PDF", self)
+        self.multiple_pdf_action.setShortcut(QKeySequence("Ctrl+2"))
+        self.multiple_pdf_action.setCheckable(True)
+        self.multiple_pdf_action.triggered.connect(
+            lambda: self._set_image_pdf_mode(ImagePdfMode.MERGE)
+        )
+
+        image_pdf_menu = self.menuBar().addMenu("Image → PDF")
+        self.image_pdf_group = QActionGroup(self)
+        self.image_pdf_group.setExclusive(True)
+        for action in (self.single_pdf_action, self.multiple_pdf_action):
+            self.image_pdf_group.addAction(action)
+            image_pdf_menu.addAction(action)
+        self._check_image_pdf_action()
+
+    def _check_image_pdf_action(self) -> None:
+        merging = self.settings.image_pdf_mode == ImagePdfMode.MERGE.value
+        self.multiple_pdf_action.setChecked(merging)
+        self.single_pdf_action.setChecked(not merging)
+
+    def _set_image_pdf_mode(self, mode: ImagePdfMode) -> None:
+        self.settings.image_pdf_mode = mode.value
+        self.settings.save()
+        self._check_image_pdf_action()
+        if mode is ImagePdfMode.MERGE:
+            self.statusBar().showMessage(
+                "Image → PDF: every queued image becomes one page of a single PDF."
+            )
+        else:
+            self.statusBar().showMessage("Image → PDF: one PDF per image.")
 
     def _build_ui(self) -> None:
         central = QWidget()
@@ -247,6 +287,10 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Imported {len(new_jobs)} file(s).")
 
     def _default_target(self, source_format: str, targets: list[str]) -> str:
+        # In merge mode a new image is meant to join the PDF, so PDF wins over the
+        # format picked for an earlier conversion.
+        if self.settings.image_pdf_mode == ImagePdfMode.MERGE.value and "pdf" in targets:
+            return "pdf"
         preferred = self._preferred_target_format
         if preferred in targets and preferred != source_format:
             return preferred

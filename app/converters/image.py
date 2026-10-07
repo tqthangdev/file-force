@@ -26,6 +26,9 @@ from app.utils.file_utils import atomic_output
 from app.utils.format_utils import target_from_output
 
 IMAGE_FORMATS = ["png", "jpg", "webp", "bmp", "tiff", "ico"]
+# Formats the engine writes. PDF is a target only: Pillow can save it, nothing
+# converts a PDF back into an image (that would need poppler/pdf2image).
+IMAGE_TARGETS = [*IMAGE_FORMATS, "pdf"]
 
 _SAVE_FORMAT = {
     "png": "PNG",
@@ -34,12 +37,14 @@ _SAVE_FORMAT = {
     "bmp": "BMP",
     "tiff": "TIFF",
     "ico": "ICO",
+    "pdf": "PDF",
 }
 
 # Targets that cannot store an alpha channel; transparency is composited away.
 _OPAQUE_TARGETS = {"jpg", "bmp"}
 _ALPHA_MODES = {"RGBA", "LA", "PA"}
 _ICO_MAX = (256, 256)
+_DEFAULT_PDF_DPI = 150
 
 
 def _has_alpha(image: Image.Image) -> bool:
@@ -69,9 +74,13 @@ class ImageConverter(BaseConverter):
         return {
             (src, dst)
             for src in IMAGE_FORMATS
-            for dst in IMAGE_FORMATS
+            for dst in IMAGE_TARGETS
             if src != dst
         }
+
+    def supports_merge(self, source_format: str, target_format: str) -> bool:
+        """Several images become the pages of one PDF."""
+        return target_format == "pdf" and source_format in IMAGE_FORMATS
 
     def is_available(self) -> bool:
         return True  # Pillow is a Python dependency, always importable
@@ -116,6 +125,11 @@ class ImageConverter(BaseConverter):
                 "type": "bool", "default": True,
                 "label": "Resize to 256×256 when larger",
             }
+        if target_format == "pdf":
+            schema["dpi"] = {
+                "type": "int", "min": 30, "max": 1200, "step": 10,
+                "default": _DEFAULT_PDF_DPI, "label": "Resolution (DPI)",
+            }
         return schema
 
     # ------------------------------------------------------------------- execution
@@ -130,6 +144,9 @@ class ImageConverter(BaseConverter):
         if save_format is None:
             raise ConversionError(f"Unsupported image target: {target!r}")
         options = self.effective_options("", target, context.options)
+
+        if context.merged:
+            return self._merge_into(context, target, save_format, options)
 
         try:
             with Image.open(context.source) as opened:
@@ -157,18 +174,75 @@ class ImageConverter(BaseConverter):
 
         return context.output
 
+    def _merge_into(
+        self, context: ConversionContext, target: str, save_format: str, options: dict
+    ) -> Path:
+        """Write every source, in order, as one file (one page per source)."""
+        if target != "pdf":
+            raise ConversionError(
+                f"Merging several images is only supported for PDF, not {target!r}."
+            )
+
+        pages: list[Image.Image] = []
+        try:
+            for index, path in enumerate(context.sources):
+                if context.cancelled:
+                    raise ConversionCancelled()
+                with Image.open(path) as opened:
+                    opened.load()
+                    oriented = ImageOps.exif_transpose(opened) or opened
+                    page = oriented.copy()
+                    pages.append(self._prepare(page, target, options))
+                # Pages are read sequentially; saving is the only slow step and it
+                # happens once, so most of the bar reflects loading.
+                context.report(int(5 + 80 * (index + 1) / max(1, len(context.sources))))
+
+            if context.cancelled:
+                raise ConversionCancelled()
+
+            first, rest = pages[0], pages[1:]
+            with atomic_output(context.output) as temp_path:
+                kwargs = self._save_kwargs(target, options)
+                if rest:
+                    first.save(
+                        temp_path,
+                        format=save_format,
+                        save_all=True,
+                        append_images=rest,
+                        **kwargs,
+                    )
+                else:
+                    first.save(temp_path, format=save_format, **kwargs)
+            context.report(95)
+        except ConversionCancelled:
+            raise
+        except ConversionError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise ConversionError(f"Image conversion failed: {exc}") from exc
+        finally:
+            for page in pages:
+                page.close()
+
+        return context.output
+
     # -------------------------------------------------------------------- helpers
     def _save_kwargs(self, target: str, options: dict) -> dict:
-        quality = int(options.get("quality", 90))
+        quality = int(options.get("quality") or 90)
         if target == "jpg":
             return {"quality": quality, "optimize": True}
         if target == "webp":
             return {"quality": quality, "method": 4}
+        if target == "pdf":
+            dpi = int(options.get("dpi") or _DEFAULT_PDF_DPI)
+            return {"resolution": float(dpi)}
         return {}
 
     def _prepare(self, image: Image.Image, target: str, options: dict) -> Image.Image:
         if target == "ico":
             return self._prepare_ico(image, options.get("ico_resize", True))
+        if target == "pdf":
+            return self._prepare_pdf(image)
         if target in _OPAQUE_TARGETS and _has_alpha(image):
             return self._flatten(image, _parse_color(options.get("background")))
         # Normalize modes the target cannot store directly.
@@ -179,6 +253,14 @@ class ImageConverter(BaseConverter):
         if image.mode == "LA":
             return image.convert("RGBA")
         return image
+
+    def _prepare_pdf(self, image: Image.Image) -> Image.Image:
+        # A PDF page stores no alpha, so transparency is composited onto white.
+        if _has_alpha(image):
+            return self._flatten(image, (255, 255, 255))
+        if image.mode in ("1", "L", "RGB"):
+            return image
+        return image.convert("RGB")
 
     def _prepare_ico(self, image: Image.Image, resize: bool) -> Image.Image:
         # ICO entries are stored as PNG. Some decoders (e.g. GNOME's glycin)

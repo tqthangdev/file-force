@@ -4,7 +4,7 @@ from app.core.converter_manager import ConverterManager
 from app.core.format_registry import FormatRegistry
 from app.core.job_manager import JobManager
 from app.models.conversion_job import ConversionJob, JobStatus
-from app.services.settings import Settings
+from app.services.settings import ImagePdfMode, Settings
 from tests.fakes import FakeConverter
 
 
@@ -193,3 +193,133 @@ def test_duplicate_engine_names_are_registered_once(qtbot, tmp_path):
     # Regression guard: the manager resolves converters by job.selected_engine.
     manager, registry = _build(FakeConverter(name="fake"))
     assert registry.get("fake") is not None
+
+
+# ------------------------------------------------------------------- merge mode
+def _merge_build(tmp_path, **converter_kwargs):
+    converter = FakeConverter(
+        pairs={("png", "pdf")}, merge_pairs={("png", "pdf")}, **converter_kwargs
+    )
+    registry = FormatRegistry()
+    registry.register(converter)
+    settings = Settings(image_pdf_mode=ImagePdfMode.MERGE.value)
+    settings.output_directory = str(tmp_path)
+    return JobManager(registry, ConverterManager(registry), settings), converter
+
+
+def test_merge_mode_writes_one_pdf_for_the_whole_queue(qtbot, tmp_path):
+    manager, converter = _merge_build(tmp_path)
+    jobs = [_job(tmp_path / f"{i}.png", "png", "pdf") for i in range(3)]
+    manager.add_jobs(jobs)
+
+    result = manager.start_all()
+    assert result.ready == [jobs[0]]  # one leader runs for the group
+    assert jobs[0].is_merge_leader and all(job.merge is jobs[0].merge for job in jobs)
+
+    qtbot.waitUntil(lambda: not manager.is_running(), timeout=5000)
+
+    assert converter.merge_calls == [[job.source for job in jobs]]
+    assert converter.calls == [jobs[0].source]  # one conversion, not three
+    assert all(job.status is JobStatus.COMPLETED for job in jobs)
+    assert len({job.output for job in jobs}) == 1  # every row points at one file
+    assert jobs[0].output.exists()
+
+
+def test_single_mode_keeps_one_output_per_image(qtbot, tmp_path):
+    converter = FakeConverter(pairs={("png", "pdf")}, merge_pairs={("png", "pdf")})
+    registry = FormatRegistry()
+    registry.register(converter)
+    manager = JobManager(registry, ConverterManager(registry), Settings())
+    jobs = [_job(tmp_path / f"{i}.png", "png", "pdf") for i in range(3)]
+    manager.add_jobs(jobs)
+
+    result = manager.start_all()
+
+    assert len(result.ready) == 3
+    qtbot.waitUntil(lambda: not manager.is_running(), timeout=5000)
+    assert converter.merge_calls == []
+    assert len({job.output for job in jobs}) == 3
+
+
+def test_merge_groups_are_per_output_folder(qtbot, tmp_path):
+    manager, converter = _merge_build(tmp_path)
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    first = [_job(tmp_path / f"{i}.png", "png", "pdf") for i in range(2)]
+    second = [_job(nested / f"{i}.png", "png", "pdf") for i in range(2)]
+    manager.add_jobs([*first, *second])
+
+    result = manager.start_all()
+
+    assert len(result.ready) == 2  # one leader per folder
+    qtbot.waitUntil(lambda: not manager.is_running(), timeout=5000)
+    # The two groups may run in either order.
+    merged = sorted(sorted(sources) for sources in converter.merge_calls)
+    assert merged == sorted(
+        [sorted(job.source for job in first), sorted(job.source for job in second)]
+    )
+
+
+def test_merge_needs_a_pair_the_engine_supports(qtbot, tmp_path):
+    converter = FakeConverter(pairs={("png", "jpg")})  # merge_pairs empty
+    registry = FormatRegistry()
+    registry.register(converter)
+    settings = Settings(image_pdf_mode=ImagePdfMode.MERGE.value)
+    manager = JobManager(registry, ConverterManager(registry), settings)
+    jobs = [_job(tmp_path / f"{i}.png", "png", "jpg") for i in range(3)]
+    manager.add_jobs(jobs)
+
+    result = manager.start_all()
+
+    assert len(result.ready) == 3
+    qtbot.waitUntil(lambda: not manager.is_running(), timeout=5000)
+    assert converter.merge_calls == []
+
+
+def test_a_single_image_in_merge_mode_is_not_merged(qtbot, tmp_path):
+    manager, converter = _merge_build(tmp_path)
+    job = _job(tmp_path / "only.png", "png", "pdf")
+    manager.add_jobs([job])
+
+    manager.start_all()
+    qtbot.waitUntil(lambda: not manager.is_running(), timeout=5000)
+
+    assert job.merge is None
+    assert job.output == tmp_path / "only.pdf"
+    assert converter.merge_calls == []
+
+
+def test_cancelling_one_row_cancels_the_merged_group(qtbot, tmp_path):
+    manager, _ = _merge_build(tmp_path, delay=0.4)
+    jobs = [_job(tmp_path / f"{i}.png", "png", "pdf") for i in range(3)]
+    manager.add_jobs(jobs)
+
+    manager.start_all()
+    manager.cancel_job(jobs[2])  # a follower
+
+    qtbot.waitUntil(lambda: not manager.is_running(), timeout=5000)
+    assert all(job.status is JobStatus.CANCELLED for job in jobs)
+
+
+def test_a_failed_merge_fails_every_row(qtbot, tmp_path):
+    manager, _ = _merge_build(tmp_path, fail=True)
+    jobs = [_job(tmp_path / f"{i}.png", "png", "pdf") for i in range(3)]
+    manager.add_jobs(jobs)
+
+    manager.start_all()
+    qtbot.waitUntil(lambda: not manager.is_running(), timeout=5000)
+
+    assert all(job.status is JobStatus.FAILED for job in jobs)
+    assert all("Fake failure" in (job.error or "") for job in jobs)
+
+
+def test_removing_a_row_drops_it_from_the_group(tmp_path):
+    manager, _ = _merge_build(tmp_path)
+    jobs = [_job(tmp_path / f"{i}.png", "png", "pdf") for i in range(3)]
+    manager.add_jobs(jobs)
+    manager.plan_batch(jobs)
+
+    manager.remove_job(jobs[1])
+
+    assert jobs[1].merge is None
+    assert jobs[0].merge.sources == [jobs[0].source, jobs[2].source]

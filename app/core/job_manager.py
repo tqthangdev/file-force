@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from collections import deque
+from pathlib import Path
 
 from PyQt6.QtCore import QObject, QThreadPool, pyqtSignal
 
@@ -15,8 +16,8 @@ from app.core.converter_manager import ConverterManager
 from app.core.format_registry import FormatRegistry
 from app.core.preflight import AskCallback, Preflight, PreflightResult
 from app.core.worker import ConversionWorker
-from app.models.conversion_job import ConversionJob, JobStatus
-from app.services.settings import Settings
+from app.models.conversion_job import ConversionJob, JobStatus, MergeGroup
+from app.services.settings import ImagePdfMode, Settings
 
 log = logging.getLogger(__name__)
 
@@ -103,9 +104,23 @@ class JobManager(QObject):
                 self.cancel_job(job)
             if job in self._pending:
                 self._pending.remove(job)
+            self._leave_group(job)
             self.jobs.remove(job)
             self.job_removed.emit(job)
             self._maybe_finish_batch()
+
+    def _leave_group(self, job: ConversionJob) -> None:
+        """Drop a removed row from its merge group so it is not converted."""
+        group = job.merge
+        if group is None:
+            return
+        if job in group.jobs:
+            group.jobs.remove(job)
+        job.merge = None
+        if not group.jobs:
+            return
+        if len(group.jobs) == 1:
+            group.jobs[0].merge = None
 
     def clear(self) -> None:
         for job in list(self.jobs):
@@ -123,6 +138,10 @@ class JobManager(QObject):
         if not candidates:
             return PreflightResult()
 
+        # Grouping happens per batch: what the user queued is unchanged, but rows
+        # that share an output are converted together by their leader.
+        planned = self.plan_batch(candidates)
+
         for job in candidates:
             job.status = JobStatus.WAITING
             job.progress = 0
@@ -131,11 +150,15 @@ class JobManager(QObject):
             job.selected_engine = None
 
         preflight = Preflight(self.registry, self.manager, self.settings, ask)
-        result = preflight.run(candidates)
+        result = preflight.run(planned)
         for job in result.rejected:
             self.job_updated.emit(job)
+            self._emit_group_tail(job)
         if not result.ready:
             return result
+
+        for job in result.ready:
+            self._emit_group_tail(job)
 
         self._apply_pool_size()
         self._pending.extend(result.ready)
@@ -144,7 +167,88 @@ class JobManager(QObject):
         self._pump()
         return result
 
+    def plan_batch(self, candidates: list[ConversionJob]) -> list[ConversionJob]:
+        """The jobs to run: mergeable rows collapse into one leader each.
+
+        Rows are grouped by output folder, so images from different folders never end
+        up in the same PDF. Merging only happens when it is switched on in settings
+        and the engine supports it for the pair.
+        """
+        if not self._merge_enabled():
+            for job in candidates:
+                job.merge = None
+            return list(candidates)
+
+        buckets: dict[Path, list[ConversionJob]] = {}
+        leaders: list[ConversionJob] = []
+        for job in candidates:
+            job.merge = None
+            if not self._can_merge(job):
+                leaders.append(job)
+                continue
+            buckets.setdefault(Path(self.settings.output_dir_for(job.source)), []).append(job)
+
+        for group_jobs in buckets.values():
+            if len(group_jobs) < 2:
+                leaders.append(group_jobs[0])
+                continue
+            group = MergeGroup(jobs=list(group_jobs))
+            for job in group_jobs:
+                job.merge = group
+            leaders.append(group_jobs[0])
+
+        order = {id(job): index for index, job in enumerate(candidates)}
+        leaders.sort(key=lambda job: order[id(job)])
+        return leaders
+
+    def _merge_enabled(self) -> bool:
+        return self.settings.image_pdf_mode == ImagePdfMode.MERGE.value
+
+    def _can_merge(self, job: ConversionJob) -> bool:
+        converter = self.manager.select_converter(job.source_format, job.target_format)
+        return converter is not None and converter.supports_merge(
+            job.source_format, job.target_format
+        )
+
+    def _emit_group_tail(self, job: ConversionJob) -> None:
+        """A group's other rows change whenever their leader does."""
+        group = job.merge
+        if group is None:
+            return
+        for member in group.jobs:
+            if member is not job:
+                self.job_updated.emit(member)
+
+    def _mirror_group(
+        self,
+        job: ConversionJob,
+        *,
+        status: JobStatus | None = None,
+        progress: int | None = None,
+        error: str | None = None,
+        output: Path | None = None,
+    ) -> None:
+        """Apply a group leader's status change to the other rows of its group."""
+        group = job.merge
+        if group is None:
+            return
+        for member in group.jobs:
+            if member is job:
+                continue
+            if status is not None:
+                member.status = status
+            if progress is not None:
+                member.progress = progress
+            if output is not None:
+                member.output = output
+            member.error = error
+            self.job_updated.emit(member)
+
     def cancel_job(self, job: ConversionJob) -> None:
+        # A merged output cannot be written partially, so cancelling any row of a
+        # group cancels the whole group.
+        if job.merge is not None and job.merge.leader is not job:
+            job = job.merge.leader
         if job in self._pending:
             self._pending.remove(job)
             self._mark_cancelled(job)
@@ -163,6 +267,7 @@ class JobManager(QObject):
         job.status = JobStatus.CANCELLED
         job.error = "Cancelled."
         self.job_updated.emit(job)
+        self._mirror_group(job, status=JobStatus.CANCELLED, error="Cancelled.")
 
     def cancel_all(self) -> None:
         for job in list(self._pending):
@@ -213,7 +318,7 @@ class JobManager(QObject):
         self._pool.start(worker)
 
     def _forget(self, job: ConversionJob) -> None:
-        for key, (stored_job, _worker) in list(self._running.items()):
+        for key, (stored_job, worker) in list(self._running.items()):
             if stored_job is job:
                 del self._running[key]
                 break
@@ -222,10 +327,12 @@ class JobManager(QObject):
         job.status = JobStatus.CONVERTING
         job.progress = 0
         self.job_updated.emit(job)
+        self._mirror_group(job, status=JobStatus.CONVERTING, progress=0, error=None)
 
     def _on_progress(self, job: ConversionJob, percent: int) -> None:
         job.progress = percent
         self.job_updated.emit(job)
+        self._mirror_group(job, progress=percent)
 
     def _on_finished(self, job: ConversionJob, output: str) -> None:
         job.status = JobStatus.COMPLETED
@@ -233,6 +340,13 @@ class JobManager(QObject):
         job.error = None
         self._forget(job)
         self.job_updated.emit(job)
+        self._mirror_group(
+            job,
+            status=JobStatus.COMPLETED,
+            progress=100,
+            error=None,
+            output=Path(output),
+        )
         self._after_job()
 
     def _on_error(self, job: ConversionJob, message: str) -> None:
@@ -240,6 +354,7 @@ class JobManager(QObject):
         job.error = message
         self._forget(job)
         self.job_updated.emit(job)
+        self._mirror_group(job, status=JobStatus.FAILED, error=message)
         self._after_job()
 
     def _on_cancelled(self, job: ConversionJob) -> None:
@@ -247,6 +362,7 @@ class JobManager(QObject):
         job.error = "Cancelled."
         self._forget(job)
         self.job_updated.emit(job)
+        self._mirror_group(job, status=JobStatus.CANCELLED, error="Cancelled.")
         self._after_job()
 
     def _after_job(self) -> None:
